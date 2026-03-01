@@ -362,19 +362,12 @@ function drawAll() {
 function animate() {
   frameCount++;
 
-  // Smooth pupil movement toward target
-  pupilOffset.x += (targetOffset.x - pupilOffset.x) * 0.15;
-  pupilOffset.y += (targetOffset.y - pupilOffset.y) * 0.15;
+  // Smooth pupil movement toward target (faster = 0.25)
+  pupilOffset.x += (targetOffset.x - pupilOffset.x) * 0.25;
+  pupilOffset.y += (targetOffset.y - pupilOffset.y) * 0.25;
 
-  // Update target from face position
-  if (trackingActive && faceDetected) {
-    // facePos.x: 0=left, 1=right  →  pupil offset -2..+2
-    // Note: camera is mirrored so invert X
-    targetOffset.x = ((facePos.x - 0.5) * 2) * 2.0;
-    targetOffset.y = ((facePos.y - 0.4) * 2) * 1.2;
-    targetOffset.x = Math.max(-2, Math.min(2, targetOffset.x));
-    targetOffset.y = Math.max(-1, Math.min(1, targetOffset.y));
-  } else if (!trackingActive) {
+  // Pupils drift back to center when no face
+  if (!trackingActive || !faceDetected) {
     targetOffset.x = 0; targetOffset.y = 0;
   }
 
@@ -524,6 +517,15 @@ function onResults(results) {
     facePos.x = nose.x;
     facePos.y = eyeMidY;
 
+    // ── Immediately update pupil target ──
+    // Camera видео не зеркалится для MediaPipe, но display зеркален → инвертируем X
+    // nose.x=0 → лицо справа на экране → зрачок вправо (+)
+    // nose.x=1 → лицо слева на экране → зрачок влево (-)
+    const dx = (nose.x - 0.5) * -4.0;   // инвертируем и усиливаем
+    const dy = (eyeMidY - 0.38) * 3.0;
+    targetOffset.x = Math.max(-2, Math.min(2, dx));
+    targetOffset.y = Math.max(-1, Math.min(1, dy));
+
     // Draw dot on nose in overlay (mirrored display)
     const w = overlayEl.width;
     const h = overlayEl.height;
@@ -544,7 +546,7 @@ function onResults(results) {
     octx.beginPath(); octx.moveTo(nx-8,ny); octx.lineTo(nx+8,ny); octx.stroke();
     octx.beginPath(); octx.moveTo(nx,ny-8); octx.lineTo(nx,ny+8); octx.stroke();
 
-    updateStatus('TRACKING ✓', true);
+    updateStatus(`TRACKING ✓  x:${nose.x.toFixed(2)} y:${eyeMidY.toFixed(2)}`, true);
   } else {
     faceDetected = false;
     updateStatus('NO FACE DETECTED', false);
