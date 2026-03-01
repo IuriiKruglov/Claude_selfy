@@ -264,19 +264,29 @@ function playTalkSound() {
 
 // ── Draw ──────────────────────────────────────────────────────────────────────
 function drawAll() {
+  // Parallax offsets — background shifts slightly with face movement
+  const bx = Math.round(-pupilOffset.x * 2.0);
+  const by = Math.round(-pupilOffset.y * 1.5);
+
   ctx.fillStyle = C.BG;
   ctx.fillRect(0, 0, 64, 80);
 
-  // Bookshelf
-  px(0,10,C.WOOD,64,2); px(0,35,C.WOOD,64,2);
+  // Parallax-shifted pixel helper
+  function ppx(x, y, color, w=1, h=1) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x + bx, y + by, w, h);
+  }
+
+  // Bookshelf with parallax
+  ppx(0,10,C.WOOD,64,2); ppx(0,35,C.WOOD,64,2);
   [C.BOOK1,C.BOOK2,C.BOOK3,C.BOOK4,C.BOOK1,C.BOOK3,C.BOOK2,C.BOOK4].forEach((c,i)=>{
-    px(i*8,2,c,7,8); px(i*8,2,C.BG2,1,8);
+    ppx(i*8,2,c,7,8); ppx(i*8,2,C.BG2,1,8);
   });
   [C.BOOK3,C.BOOK1,C.BOOK4,C.BOOK2,C.BOOK1].forEach((c,i)=>{
-    px(i*8,12,c,7,23); px(i*8,12,C.BG2,1,23);
+    ppx(i*8,12,c,7,23); ppx(i*8,12,C.BG2,1,23);
   });
-  px(40,12,C.BOOK3,7,23); px(48,12,C.BOOK4,7,23); px(56,12,C.BOOK2,7,23);
-  px(0,37,C.BG2,64,43);
+  ppx(40,12,C.BOOK3,7,23); ppx(48,12,C.BOOK4,7,23); ppx(56,12,C.BOOK2,7,23);
+  ppx(0,37,C.BG2,64,43);
 
   // Body
   px(10,62,C.SHIRT,44,18);
@@ -297,38 +307,53 @@ function drawAll() {
   px(24,14,C.HAIR,16,3); px(22,16,C.HAIR,4,2); px(38,16,C.HAIR,4,2);
 
   // Eyebrows
-  px(20,31,C.HAIR,8,1); px(36,31,C.HAIR,8,1);
+  px(19,30,C.HAIR,9,1); px(36,30,C.HAIR,9,1);
 
   // ── EYES with pupil tracking ──
-  // pupilOffset is float, clamp then floor for pixel placement
-  const ox = Math.floor(Math.max(-1.5, Math.min(1.5, pupilOffset.x)));
-  const oy = Math.floor(Math.max(-1,   Math.min(1,   pupilOffset.y)));
+  const ox = Math.floor(Math.max(-2, Math.min(2, pupilOffset.x)));
+  const oy = Math.floor(Math.max(-1, Math.min(1, pupilOffset.y)));
 
   if (eyesClosed) {
-    px(20,36,C.HAIR,8,1); px(36,36,C.HAIR,8,1);
+    // closed: thick line
+    px(19,35,C.HAIR,10,2); px(36,35,C.HAIR,10,2);
   } else {
-    // eye whites — wider area so pupils have room to move
-    px(21,33,C.EYE,6,4); px(37,33,C.EYE,6,4);
-    // pupils centered at 24,35 and 40,35, move ±1 pixel
-    const lx = 23 + ox;
-    const ly = 34 + oy;
-    const rx = 39 + ox;
-    const ry = 34 + oy;
-    px(lx, ly, C.EPUP, 2, 2);
-    px(rx, ry, C.EPUP, 2, 2);
-    // highlight (fixed position)
-    px(21,33,C.HLGT,1,1); px(37,33,C.HLGT,1,1);
+    // ── Big white eye areas ──
+    //   left eye:  x=19..28, y=32..37  (10×5 px)
+    //   right eye: x=36..45, y=32..37  (10×5 px)
+    px(19,32,'#ffffff',10,6); // left white
+    px(36,32,'#ffffff',10,6); // right white
+    // subtle inner shadow at edges
+    px(19,32,C.SKIN2,1,6); px(28,32,C.SKIN2,1,6);
+    px(36,32,C.SKIN2,1,6); px(45,32,C.SKIN2,1,6);
+
+    // iris (coloured ring, 4×4)
+    const lx = 22 + ox, ly = 33 + oy;
+    const rx = 39 + ox, ry = 33 + oy;
+    px(lx, ly, C.EYE, 4, 4);
+    px(rx, ry, C.EYE, 4, 4);
+
+    // pupil (2×2, centred in iris)
+    px(lx+1, ly+1, C.EPUP, 2, 2);
+    px(rx+1, ry+1, C.EPUP, 2, 2);
+
+    // specular highlight
+    px(lx, ly, C.HLGT, 1, 1);
+    px(rx, ry, C.HLGT, 1, 1);
   }
 
-  // Glasses frames — drawn AFTER eyes so only frame overlaps, pupils visible
-  px(19,32,C.GFRM,10,1); px(19,38,C.GFRM,10,1);
-  px(19,32,C.GFRM,1,7); px(28,32,C.GFRM,1,7);
-  px(35,32,C.GFRM,10,1); px(35,38,C.GFRM,10,1);
-  px(35,32,C.GFRM,1,7); px(44,32,C.GFRM,1,7);
-  px(29,34,C.GFRM,6,1); px(16,33,C.GFRM,3,1); px(45,33,C.GFRM,3,1);
-  // Very subtle lens tint — almost transparent so pupils show through
-  ctx.fillStyle = 'rgba(170,221,255,0.12)';
-  ctx.fillRect(20,33,8,5); ctx.fillRect(36,33,8,5);
+  // Glasses frames — drawn AFTER eyes
+  // Left lens frame (fits around 19-28 eye area)
+  px(18,31,C.GFRM,11,1); px(18,38,C.GFRM,11,1);
+  px(18,31,C.GFRM,1,8); px(28,31,C.GFRM,1,8);
+  // Right lens frame
+  px(35,31,C.GFRM,11,1); px(35,38,C.GFRM,11,1);
+  px(35,31,C.GFRM,1,8); px(45,31,C.GFRM,1,8);
+  // Bridge + arms
+  px(29,34,C.GFRM,6,1);
+  px(15,33,C.GFRM,3,1); px(46,33,C.GFRM,3,1);
+  // Very faint lens tint
+  ctx.fillStyle = 'rgba(170,221,255,0.08)';
+  ctx.fillRect(19,32,9,6); ctx.fillRect(36,32,9,6);
 
   // Nose
   px(30,40,C.SKIN2,4,1); px(29,41,C.SKIN2,1,3);
