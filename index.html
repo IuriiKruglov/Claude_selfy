@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Claude's VGA Selfie — FACE TRACKING</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a1a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Press Start 2P', monospace;
+    image-rendering: pixelated;
+    gap: 12px;
+  }
+
+  h1 {
+    color: #00ffcc;
+    font-size: 9px;
+    text-shadow: 0 0 10px #00ffcc;
+    letter-spacing: 2px;
+    animation: blink-title 1.5s step-end infinite;
+  }
+  @keyframes blink-title { 50% { opacity: 0.5; } }
+
+  #main {
+    display: flex;
+    align-items: flex-start;
+    gap: 24px;
+  }
+
+  #portrait-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  canvas#c {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    border: 3px solid #00ffcc;
+    box-shadow: 0 0 30px #00ffcc44, 0 0 60px #00ffcc22;
+    cursor: pointer;
+    width: 256px;
+    height: 320px;
+  }
+
+  #speechbox {
+    color: #00ff88;
+    font-size: 6px;
+    text-shadow: 0 0 6px #00ff88;
+    min-height: 14px;
+    text-align: center;
+    letter-spacing: 1px;
+    width: 256px;
+  }
+
+  #hint {
+    color: #555577;
+    font-size: 6px;
+    letter-spacing: 1px;
+    text-align: center;
+  }
+
+  /* Camera panel */
+  #cam-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  #cam-container {
+    position: relative;
+    width: 200px;
+    height: 150px;
+    border: 2px solid #334466;
+    background: #050510;
+    overflow: hidden;
+  }
+
+  video#cam {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    opacity: 0.85;
+  }
+
+  canvas#overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    transform: scaleX(-1);
+  }
+
+  #cam-label {
+    color: #334488;
+    font-size: 6px;
+    letter-spacing: 1px;
+  }
+
+  #status {
+    color: #888800;
+    font-size: 6px;
+    letter-spacing: 1px;
+    min-height: 10px;
+    text-align: center;
+    width: 200px;
+  }
+
+  #btn-cam {
+    background: #0a1a2e;
+    border: 2px solid #00ffcc;
+    color: #00ffcc;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    text-shadow: 0 0 6px #00ffcc;
+    box-shadow: 0 0 10px #00ffcc33;
+    letter-spacing: 1px;
+  }
+  #btn-cam:hover { background: #0a2a1e; }
+
+  #tracking-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #333;
+    display: inline-block;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  #tracking-dot.active { background: #00ff44; box-shadow: 0 0 6px #00ff44; }
+
+  .scanline {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: repeating-linear-gradient(
+      to bottom, transparent 0px, transparent 3px,
+      rgba(0,0,0,0.12) 3px, rgba(0,0,0,0.12) 4px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  #subtitle {
+    color: #ffaa00;
+    font-size: 6px;
+    text-shadow: 0 0 8px #ffaa00;
+    text-align: center;
+    line-height: 2;
+  }
+</style>
+</head>
+<body>
+<div class="scanline"></div>
+<h1>📷 CLAUDE.EXE v2.0 — FACE TRACKING</h1>
+
+<div id="main">
+  <div id="portrait-wrap">
+    <canvas id="c" width="64" height="80"></canvas>
+    <div id="speechbox">...</div>
+    <div id="hint">[ CLICK TO TALK ]</div>
+  </div>
+
+  <div id="cam-wrap">
+    <div id="cam-label">// CAMERA INPUT //</div>
+    <div id="cam-container">
+      <video id="cam" autoplay playsinline muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <div id="status"><span id="tracking-dot"></span>CAMERA OFF</div>
+    <button id="btn-cam">▶ START TRACKING</button>
+    <p id="subtitle">AI assistant | Book lover<br>Coffee enjoyer | Est. 2023</p>
+  </div>
+</div>
+
+<!-- MediaPipe Face Mesh -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+<script>
+// ── Canvas setup ──────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// ── Palette ───────────────────────────────────────────────────────────────────
+const C = {
+  BG:'#1a0a2e', BG2:'#2a1040', WOOD:'#6b3a1f',
+  BOOK1:'#cc2222', BOOK2:'#2255cc', BOOK3:'#22aa44', BOOK4:'#cc8822',
+  SKIN:'#f5c99a', SKIN2:'#e0a870',
+  HAIR:'#2a1a0a', EYE:'#334488', EPUP:'#111122',
+  SHIRT:'#334466', COLLAR:'#ffffff',
+  GLASS:'#aaddff', GFRM:'#555555',
+  MUSTA:'#1a0a00', BLUSH:'#f09090',
+  CUP:'#ffffff', CUPB:'#dddddd', TEA:'#8B4513',
+  HLGT:'#ffffee',
+};
+
+function px(x, y, color, w=1, h=1) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+}
+
+// ── Eye tracking state ────────────────────────────────────────────────────────
+// pupilOffset: how far pupils move from center (in canvas pixels, max ±2)
+let pupilOffset = { x: 0, y: 0 };
+let targetOffset = { x: 0, y: 0 };
+let trackingActive = false;
+
+// Face position from camera (normalized 0-1, center = 0.5)
+let facePos = { x: 0.5, y: 0.4 };
+let faceDetected = false;
+
+// ── Blink / mouth state ───────────────────────────────────────────────────────
+let eyesClosed = false;
+let mouthOpen = 0;
+let talking = false;
+let talkTimer = 0;
+let blinkTimer = Math.floor(Math.random() * 180) + 80;
+let frameCount = 0;
+let charIdx = 0;
+let typingTimer = 0;
+let currentPhrase = '';
+let phraseIdx = 0;
+
+const phrases = [
+  "HELLO WORLD!", "I SEE YOU :)", "NICE FACE!",
+  "COFFEE = CODE", "BEEP BOOP...", "01010011 01000001",
+  "ERROR 404: SLEEP", "I AM WATCHING...", "PROCESSING...",
+  "TRACKING FACE...", "HI THERE!", "WINK WINK ;)",
+];
+
+// ── Audio ─────────────────────────────────────────────────────────────────────
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function beep(freq, duration, vol=0.1) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.start(); osc.stop(audioCtx.currentTime + duration);
+}
+function playTalkSound() {
+  const notes = [[523,0.06],[440,0.05],[494,0.07],[392,0.05],[523,0.04],[587,0.06],[440,0.05],[523,0.08]];
+  let t = 0;
+  notes.forEach(([f,d]) => { setTimeout(()=>beep(f,d), t*1000); t += d+0.03; });
+}
+
+// ── Draw ──────────────────────────────────────────────────────────────────────
+function drawAll() {
+  ctx.fillStyle = C.BG;
+  ctx.fillRect(0, 0, 64, 80);
+
+  // Bookshelf
+  px(0,10,C.WOOD,64,2); px(0,35,C.WOOD,64,2);
+  [C.BOOK1,C.BOOK2,C.BOOK3,C.BOOK4,C.BOOK1,C.BOOK3,C.BOOK2,C.BOOK4].forEach((c,i)=>{
+    px(i*8,2,c,7,8); px(i*8,2,C.BG2,1,8);
+  });
+  [C.BOOK3,C.BOOK1,C.BOOK4,C.BOOK2,C.BOOK1].forEach((c,i)=>{
+    px(i*8,12,c,7,23); px(i*8,12,C.BG2,1,23);
+  });
+  px(40,12,C.BOOK3,7,23); px(48,12,C.BOOK4,7,23); px(56,12,C.BOOK2,7,23);
+  px(0,37,C.BG2,64,43);
+
+  // Body
+  px(10,62,C.SHIRT,44,18);
+  px(26,60,C.COLLAR,5,4); px(33,60,C.COLLAR,5,4);
+  px(28,58,C.COLLAR,8,3); px(29,56,C.COLLAR,6,3);
+  px(27,52,C.SKIN,10,10); px(27,52,C.SKIN2,1,10); px(36,52,C.SKIN2,1,10);
+
+  // Head
+  px(16,28,C.SKIN,32,26); px(18,22,C.SKIN,28,8);
+  px(20,19,C.SKIN,24,5); px(22,17,C.SKIN,20,4);
+  px(16,38,C.BLUSH,5,4); px(43,38,C.BLUSH,5,4);
+  px(16,28,C.SKIN2,2,26); px(46,28,C.SKIN2,2,26);
+
+  // Hair
+  px(22,15,C.HAIR,20,4); px(20,17,C.HAIR,6,5); px(38,17,C.HAIR,6,5);
+  px(18,20,C.HAIR,4,5); px(42,20,C.HAIR,4,5);
+  px(16,25,C.HAIR,3,8); px(45,25,C.HAIR,3,8);
+  px(24,14,C.HAIR,16,3); px(22,16,C.HAIR,4,2); px(38,16,C.HAIR,4,2);
+
+  // Glasses frames
+  px(19,32,C.GFRM,10,1); px(19,38,C.GFRM,10,1);
+  px(19,32,C.GFRM,1,7); px(28,32,C.GFRM,1,7);
+  px(35,32,C.GFRM,10,1); px(35,38,C.GFRM,10,1);
+  px(35,32,C.GFRM,1,7); px(44,32,C.GFRM,1,7);
+  px(29,34,C.GFRM,6,1); px(16,33,C.GFRM,3,1); px(45,33,C.GFRM,3,1);
+  ctx.fillStyle = C.GLASS+'55';
+  ctx.fillRect(20,33,8,5); ctx.fillRect(36,33,8,5);
+
+  // Eyebrows
+  px(20,31,C.HAIR,8,1); px(36,31,C.HAIR,8,1);
+
+  // ── EYES with pupil tracking ──
+  const ox = Math.round(pupilOffset.x); // -2..+2
+  const oy = Math.round(pupilOffset.y); // -1..+1
+
+  if (eyesClosed) {
+    px(20,36,C.HAIR,8,1); px(36,36,C.HAIR,8,1);
+  } else {
+    // whites
+    px(22,34,C.EYE,4,3); px(38,34,C.EYE,4,3);
+    // pupils — shifted by offset, clamped inside eye area
+    const lx = Math.max(22, Math.min(24, 23 + ox));
+    const ly = Math.max(34, Math.min(35, 35 + oy));
+    const rx = Math.max(38, Math.min(40, 39 + ox));
+    const ry = Math.max(34, Math.min(35, 35 + oy));
+    px(lx, ly, C.EPUP, 2, 2);
+    px(rx, ry, C.EPUP, 2, 2);
+    // highlight
+    px(22,34,C.HLGT,1,1); px(38,34,C.HLGT,1,1);
+  }
+
+  // Nose
+  px(30,40,C.SKIN2,4,1); px(29,41,C.SKIN2,1,3);
+  px(34,41,C.SKIN2,1,3); px(29,44,C.SKIN2,6,1);
+
+  // Mouth
+  px(26,47,C.MUSTA,12,1); px(25,48,C.MUSTA,2,1); px(37,48,C.MUSTA,2,1);
+  if (mouthOpen === 0) {
+    px(26,48,'#cc7755',12,2); px(24,49,C.SKIN2,2,1); px(38,49,C.SKIN2,2,1);
+  } else if (mouthOpen === 1) {
+    px(26,48,'#cc7755',12,1); px(27,49,'#331111',10,1); px(26,50,'#cc7755',12,1);
+    px(24,49,C.SKIN2,2,1); px(38,49,C.SKIN2,2,1);
+  } else {
+    px(26,47,'#cc7755',12,1); px(25,48,'#331111',14,3);
+    px(26,48,'#eeeecc',4,1); px(31,48,'#eeeecc',4,1); px(36,48,'#eeeecc',2,1);
+    px(28,50,'#dd4444',8,1); px(26,51,'#cc7755',12,1);
+    px(24,50,C.SKIN2,2,1); px(38,50,C.SKIN2,2,1);
+  }
+
+  // Coffee cup
+  px(46,68,C.CUP,10,10); px(46,68,C.CUPB,1,10); px(55,68,C.CUPB,1,10);
+  px(46,77,C.CUPB,10,1); px(47,69,C.TEA,8,7);
+  px(56,70,C.CUPB,3,1); px(58,71,C.CUPB,1,4); px(56,75,C.CUPB,3,1);
+  const s = Math.floor(frameCount/8)%3;
+  px(49,65-s,C.GLASS,1,2); px(51,63-s,C.GLASS,1,2); px(53,65-s,C.GLASS,1,2);
+
+  // Scanlines
+  ctx.fillStyle = 'rgba(0,0,0,0.08)';
+  for (let y=0; y<80; y+=2) ctx.fillRect(0,y,64,1);
+}
+
+// ── Animation loop ────────────────────────────────────────────────────────────
+function animate() {
+  frameCount++;
+
+  // Smooth pupil movement toward target
+  pupilOffset.x += (targetOffset.x - pupilOffset.x) * 0.15;
+  pupilOffset.y += (targetOffset.y - pupilOffset.y) * 0.15;
+
+  // Update target from face position
+  if (trackingActive && faceDetected) {
+    // facePos.x: 0=left, 1=right  →  pupil offset -2..+2
+    // Note: camera is mirrored so invert X
+    targetOffset.x = ((facePos.x - 0.5) * 2) * 2.0;
+    targetOffset.y = ((facePos.y - 0.4) * 2) * 1.2;
+    targetOffset.x = Math.max(-2, Math.min(2, targetOffset.x));
+    targetOffset.y = Math.max(-1, Math.min(1, targetOffset.y));
+  } else if (!trackingActive) {
+    targetOffset.x = 0; targetOffset.y = 0;
+  }
+
+  // Blink
+  blinkTimer--;
+  if (blinkTimer === 3) { eyesClosed = true; beep(880, 0.03); }
+  if (blinkTimer <= 0) { eyesClosed = false; blinkTimer = Math.floor(Math.random()*200)+80; }
+
+  // Talking
+  if (talking) {
+    talkTimer--;
+    mouthOpen = Math.floor(frameCount/4)%3;
+    typingTimer++;
+    if (typingTimer%4===0 && charIdx<=currentPhrase.length) {
+      document.getElementById('speechbox').textContent =
+        '> '+currentPhrase.substring(0,charIdx)+(charIdx<currentPhrase.length?'_':'');
+      charIdx++;
+    }
+    if (talkTimer<=0) { talking=false; mouthOpen=0; }
+  }
+
+  // Flicker
+  if (frameCount%240===0) {
+    canvas.style.opacity='0.82';
+    setTimeout(()=>canvas.style.opacity='1', 40);
+  }
+
+  drawAll();
+  requestAnimationFrame(animate);
+}
+
+// ── Click to talk ─────────────────────────────────────────────────────────────
+canvas.addEventListener('click', ()=>{
+  initAudio();
+  if (talking) return;
+  currentPhrase = phrases[phraseIdx%phrases.length]; phraseIdx++;
+  charIdx=0; typingTimer=0;
+  document.getElementById('speechbox').textContent='> _';
+  talking=true; talkTimer=90+currentPhrase.length*4;
+  playTalkSound();
+});
+
+// ── MediaPipe Face Mesh ───────────────────────────────────────────────────────
+const videoEl = document.getElementById('cam');
+const overlayEl = document.getElementById('overlay');
+const octx = overlayEl.getContext('2d');
+const statusEl = document.getElementById('status');
+const dotEl = document.getElementById('tracking-dot');
+const btnCam = document.getElementById('btn-cam');
+
+let faceMesh = null;
+let cameraRunning = false;
+let mpCamera = null;
+
+function updateStatus(msg, active=false) {
+  statusEl.innerHTML = `<span id="tracking-dot" class="${active?'active':''}"></span>${msg}`;
+}
+
+async function startTracking() {
+  initAudio();
+  beep(440, 0.1);
+  updateStatus('LOADING MODEL...', false);
+  btnCam.disabled = true;
+
+  faceMesh = new FaceMesh({locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  });
+
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: false,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5,
+  });
+
+  faceMesh.onResults(onResults);
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 320, height: 240, facingMode: 'user' }
+    });
+    videoEl.srcObject = stream;
+    await videoEl.play();
+
+    overlayEl.width = videoEl.videoWidth || 320;
+    overlayEl.height = videoEl.videoHeight || 240;
+
+    mpCamera = new Camera(videoEl, {
+      onFrame: async () => {
+        overlayEl.width = videoEl.videoWidth;
+        overlayEl.height = videoEl.videoHeight;
+        await faceMesh.send({image: videoEl});
+      },
+      width: 320,
+      height: 240
+    });
+
+    mpCamera.start();
+    trackingActive = true;
+    cameraRunning = true;
+    updateStatus('TRACKING FACE...', true);
+    btnCam.textContent = '■ STOP TRACKING';
+    btnCam.disabled = false;
+    beep(660, 0.08);
+
+  } catch(e) {
+    updateStatus('CAM ERROR: '+e.message, false);
+    btnCam.disabled = false;
+    btnCam.textContent = '▶ START TRACKING';
+  }
+}
+
+function stopTracking() {
+  if (mpCamera) { mpCamera.stop(); mpCamera = null; }
+  if (videoEl.srcObject) {
+    videoEl.srcObject.getTracks().forEach(t=>t.stop());
+    videoEl.srcObject = null;
+  }
+  trackingActive = false;
+  cameraRunning = false;
+  faceDetected = false;
+  octx.clearRect(0,0,overlayEl.width,overlayEl.height);
+  updateStatus('CAMERA OFF', false);
+  btnCam.textContent = '▶ START TRACKING';
+  beep(220, 0.1);
+}
+
+btnCam.addEventListener('click', ()=>{
+  if (!cameraRunning) startTracking();
+  else stopTracking();
+});
+
+function onResults(results) {
+  octx.clearRect(0, 0, overlayEl.width, overlayEl.height);
+
+  if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+    faceDetected = true;
+    const lm = results.multiFaceLandmarks[0];
+
+    // Use nose tip (landmark 1) as face center reference
+    const nose = lm[1];
+    // Use nose tip for X, and midpoint of eyes for Y
+    const leftEye = lm[33];
+    const rightEye = lm[263];
+    const eyeMidY = (leftEye.y + rightEye.y) / 2;
+
+    facePos.x = nose.x;
+    facePos.y = eyeMidY;
+
+    // Draw dot on nose in overlay (mirrored display)
+    const w = overlayEl.width;
+    const h = overlayEl.height;
+
+    // Draw face outline dots (key landmarks)
+    octx.fillStyle = '#00ff8866';
+    [33,263,1,61,291,199].forEach(idx => {
+      const p = lm[idx];
+      octx.beginPath();
+      octx.arc(p.x*w, p.y*h, 3, 0, Math.PI*2);
+      octx.fill();
+    });
+
+    // Crosshair on nose
+    octx.strokeStyle = '#00ffcc';
+    octx.lineWidth = 1;
+    const nx = nose.x*w, ny = nose.y*h;
+    octx.beginPath(); octx.moveTo(nx-8,ny); octx.lineTo(nx+8,ny); octx.stroke();
+    octx.beginPath(); octx.moveTo(nx,ny-8); octx.lineTo(nx,ny+8); octx.stroke();
+
+    updateStatus('TRACKING ✓', true);
+  } else {
+    faceDetected = false;
+    updateStatus('NO FACE DETECTED', false);
+  }
+}
+
+// ── Start render loop ─────────────────────────────────────────────────────────
+animate();
+</script>
+</body>
+</html>
