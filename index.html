@@ -7,15 +7,39 @@
   @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
-  body {
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
     background: #0a0a1a;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Press Start 2P', monospace;
+    image-rendering: pixelated;
+  }
+
+  /* Outer wrapper fills viewport, centers the scaler */
+  #viewport {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* This is the fixed-size app container that gets scaled */
+  #scaler {
+    /* Natural (design) size — everything inside is designed for this */
+    width: 560px;
+    height: 520px;
+    transform-origin: center center;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 100vh;
-    font-family: 'Press Start 2P', monospace;
-    image-rendering: pixelated;
     gap: 12px;
   }
 
@@ -25,6 +49,7 @@
     text-shadow: 0 0 10px #00ffcc;
     letter-spacing: 2px;
     animation: blink-title 1.5s step-end infinite;
+    white-space: nowrap;
   }
   @keyframes blink-title { 50% { opacity: 0.5; } }
 
@@ -68,7 +93,6 @@
     text-align: center;
   }
 
-  /* Camera panel */
   #cam-wrap {
     display: flex;
     flex-direction: column;
@@ -163,6 +187,8 @@
 </head>
 <body>
 <div class="scanline"></div>
+<div id="viewport">
+<div id="scaler">
 <h1>📷 CLAUDE.EXE v2.0 — FACE TRACKING</h1>
 
 <div id="main">
@@ -182,7 +208,8 @@
     <button id="btn-cam">▶ START TRACKING</button>
     <p id="subtitle">AI assistant | Book lover<br>Coffee enjoyer | Est. 2023</p>
   </div>
-</div>
+</div> <!-- /scaler -->
+</div> <!-- /viewport -->
 
 <!-- MediaPipe Face Mesh -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -582,6 +609,20 @@ function onResults(results) {
 
 // ── Start render loop ─────────────────────────────────────────────────────────
 animate();
+
+// ── Responsive scaling ────────────────────────────────────────────────────────
+const scaler = document.getElementById('scaler');
+const DESIGN_W = 560, DESIGN_H = 520;
+
+function rescale() {
+  const scaleX = window.innerWidth  / DESIGN_W;
+  const scaleY = window.innerHeight / DESIGN_H;
+  const scale  = Math.min(scaleX, scaleY) * 0.97; // 3% padding
+  scaler.style.transform = `scale(${scale})`;
+}
+
+rescale();
+window.addEventListener('resize', rescale);
 </script>
 </body>
 </html>
